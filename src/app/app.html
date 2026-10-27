@@ -1,0 +1,99 @@
+<div class="site-shell">
+  @if (market.is_demo) {
+    <div class="demo-strip">
+      <span class="demo-dot"></span> Modo demostración · Explora el flujo completo sin crear una
+      cuenta
+      <a routerLink="/ingresar" (click)="close_menu()"
+        >Probar ahora <span aria-hidden="true">↗</span></a
+      >
+    </div>
+  }
+  <header class="site-header">
+    <div class="container nav-row">
+      <a class="brand" routerLink="/" (click)="close_menu()" aria-label="ManoCerca, inicio"
+        ><span class="brand-mark">✳</span
+        ><span>mano<span class="brand-accent">cerca</span><small>AREQUIPA</small></span></a
+      >
+      <nav class="desktop-nav" aria-label="Principal">
+        <a routerLink="/explorar" routerLinkActive="active">Encontrar maestros</a>
+        <a routerLink="/maestros" routerLinkActive="active">Soy maestro</a>
+        <a routerLink="/como-funciona" routerLinkActive="active">Cómo funciona</a>
+      </nav>
+      <div class="nav-actions">
+        @if (market.user()) {
+          <a class="nav-dashboard" routerLink="/panel"
+            >Mi espacio
+            <span class="notice-badge" [hidden]="market.unread_count() === 0">{{
+              market.unread_count()
+            }}</span></a
+          >
+          <button class="text-button desktop-only" type="button" (click)="logout()">Salir</button>
+        } @else {
+          <a class="text-button desktop-only" routerLink="/ingresar">Ingresar</a>
+          <a class="button button-primary nav-cta" routerLink="/solicitar"
+            >Solicitar servicio <span aria-hidden="true">↗</span></a
+          >
+        }
+        <button
+          class="menu-toggle"
+          type="button"
+          [attr.aria-expanded]="is_menu_open"
+          aria-label="Abrir menú"
+          (click)="is_menu_open = !is_menu_open"
+        >
+          ☰
+        </button>
+      </div>
+    </div>
+    @if (is_menu_open) {
+      <nav class="mobile-nav" aria-label="Menú móvil">
+        <a routerLink="/explorar" (click)="close_menu()">Encontrar maestros</a>
+        <a routerLink="/maestros" (click)="close_menu()">Soy maestro</a>
+        <a routerLink="/como-funciona" (click)="close_menu()">Cómo funciona</a>
+        <a routerLink="/solicitar" (click)="close_menu()">Solicitar servicio</a>
+        <a routerLink="/panel" (click)="close_menu()">Mi espacio</a>
+        @if (!market.user()) {
+          <a routerLink="/ingresar" (click)="close_menu()">Ingresar</a>
+        }
+        @if (market.user()) {
+          <button type="button" (click)="logout()">Cerrar sesión</button>
+        }
+      </nav>
+    }
+  </header>
+  <main><router-outlet /></main>
+  <footer class="site-footer">
+    <div class="container footer-top">
+      <div>
+        <a class="brand brand-light" routerLink="/"
+          ><span class="brand-mark">✳</span
+          ><span>mano<span class="brand-accent">cerca</span><small>AREQUIPA</small></span></a
+        >
+        <p>Un buen maestro, más cerca de casa.</p>
+      </div>
+      <div>
+        <strong>Explora</strong><a routerLink="/explorar">Encontrar maestros</a
+        ><a routerLink="/solicitar">Publicar solicitud</a
+        ><a routerLink="/como-funciona">Cómo funciona</a>
+      </div>
+      <div>
+        <strong>Profesionales</strong><a routerLink="/maestros">Ser maestro en ManoCerca</a
+        ><a routerLink="/registro" [queryParams]="{ rol: 'professional' }">Crear perfil</a>
+      </div>
+      <div>
+        <strong>Estamos en</strong><span>Arequipa, Perú</span
+        ><span>Hecho para nuestra ciudad.</span>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <span>© 2026 ManoCerca · Proyecto MVP</span
+      ><span>Hecho con cuidado en Arequipa <span aria-hidden="true">♥</span></span>
+    </div>
+  </footer>
+  @if (market.toast()) {
+    <div class="toast" role="status">
+      {{ market.toast() }}
+      <button type="button" aria-label="Cerrar" (click)="market.toast.set('')">×</button>
+    </div>
+  }
+</div>
