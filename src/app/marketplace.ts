@@ -1,4 +1,4 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, InjectionToken, computed, inject, signal } from '@angular/core';
 import { createClient, RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { public_config } from './config.generated';
 import {
@@ -12,6 +12,11 @@ import {
   Service,
   ServiceRequest,
 } from './models';
+
+export const PUBLIC_CONFIG = new InjectionToken<{ url: string; anon_key: string }>('public_config', {
+  providedIn: 'root',
+  factory: () => public_config,
+});
 
 interface DemoData {
   requests: ServiceRequest[];
@@ -231,10 +236,11 @@ function seed_data(): DemoData {
 
 @Injectable({ providedIn: 'root' })
 export class Marketplace {
-  readonly is_demo = !public_config.url || !public_config.anon_key;
+  private readonly config = inject(PUBLIC_CONFIG);
+  readonly is_demo = !this.config.url || !this.config.anon_key;
   private readonly supabase: SupabaseClient | null = this.is_demo
     ? null
-    : createClient(public_config.url, public_config.anon_key);
+    : createClient(this.config.url, this.config.anon_key);
   private notification_channel: RealtimeChannel | null = null;
   private subscribed_user_id = '';
   private load_version = 0;
@@ -291,8 +297,18 @@ export class Marketplace {
   }
 
   private fail(context: string, error: unknown): never {
-    const reason = error instanceof Error ? error.message : String(error);
-    const message = `${context}: ${reason}. Revisa tu conexión, sesión y configuración de Supabase.`;
+    const details = error && typeof error === 'object' ? error as Record<string, unknown> : null;
+    const raw = error instanceof Error
+      ? error.message
+      : typeof details?.['message'] === 'string'
+        ? details['message']
+        : String(error);
+    const reason = details?.['code'] === '23514' && raw.includes('service_requests_description_check')
+      ? 'La descripción debe tener entre 10 y 1200 caracteres.'
+      : details?.['code'] === '23514' && raw.includes('service_requests_title_check')
+        ? 'El título debe tener entre 3 y 90 caracteres.'
+        : raw;
+    const message = `${context}: ${reason}`;
     this.error.set(message);
     throw new Error(message);
   }
@@ -462,10 +478,10 @@ export class Marketplace {
     phone: string,
     zone: string,
     specialty: string,
-  ): Promise<void> {
+  ): Promise<'signed_in' | 'confirmation_required'> {
     if (this.is_demo) {
       this.demo_as(role);
-      return;
+      return 'signed_in';
     }
     try {
       const result = await this.supabase!.auth.signUp({
@@ -474,11 +490,9 @@ export class Marketplace {
         options: { data: { role, full_name, phone, zone, specialty } },
       });
       if (result.error) throw result.error;
-      if (!result.data.session)
-        throw new Error(
-          'Activa el acceso inmediato en Supabase Auth o confirma el correo antes de ingresar',
-        );
+      if (!result.data.session) return 'confirmation_required';
       await this.load();
+      return 'signed_in';
     } catch (error) {
       this.fail('No se pudo crear la cuenta', error);
     }

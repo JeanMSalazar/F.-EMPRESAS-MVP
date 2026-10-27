@@ -23,23 +23,23 @@ El modo demo es solo para presentaciones. Para un piloto con usuarios reales hay
 
 ## Configurar Supabase
 
-1. Crea un proyecto Supabase y ejecuta [`supabase/migrations/202609290001_mvp.sql`](supabase/migrations/202609290001_mvp.sql) en el SQL Editor. La migración crea PostGIS, tablas, políticas RLS, Storage privado y funciones para cotizaciones y estados.
-2. En **Authentication → Providers → Email**, permite registro con correo y contraseña. Para el piloto descrito en los documentos, desactiva **Confirm email**; de lo contrario el registro requiere confirmar el correo antes de ingresar.
+1. Crea un proyecto Supabase y ejecuta **todo el contenido actualizado** de [`supabase/migrations/202609290001_mvp.sql`](supabase/migrations/202609290001_mvp.sql) en el SQL Editor. La migración crea PostGIS, tablas, políticas RLS, Storage privado y funciones para cotizaciones y estados. Si una ejecución anterior falló, vuelve a ejecutar el archivo completo; la migración se puede reintentar.
+2. En **Authentication → Sign In / Providers**, permite registro con correo y contraseña. Mantén **Confirm email** activado y configura **Authentication → URL Configuration → Site URL** con `http://localhost:4200` para pruebas locales. La app avisa al usuario que debe confirmar el correo antes de ingresar. Al desplegar, cambia Site URL por el dominio de producción y añade los destinos adicionales que necesites en Redirect URLs.
 3. Copia `.env.example` a `.env` para desarrollo local y configura estas variables. En Vercel, agrégalas en **Environment Variables**:
 
    | Variable | Valor |
    |---|---|
    | `SUPABASE_URL` | URL del proyecto (`https://...supabase.co`) |
-   | `SUPABASE_ANON_KEY` | Clave pública `anon` o publishable |
+   | `SUPABASE_PUBLISHABLE_KEY` | Clave pública `sb_publishable_...` |
 
    Nunca uses `service_role` ni una clave secreta en el frontend. `scripts/write-config.mjs` genera la configuración pública durante `npm start` y `npm run build`. El archivo generado se ignora en Git.
-4. Ejecuta `npm run build` y prueba el registro de cliente y maestro. Si publicas desde Vercel, añade tu dominio a **Authentication → URL Configuration** de Supabase.
+4. Ejecuta `npm run build` y prueba el registro de cliente y maestro con correos que puedas confirmar. Si publicas desde Vercel, añade tu dominio a **Authentication → URL Configuration** de Supabase.
 
 El mapa usa Leaflet + OpenStreetMap y se centra en Arequipa. La búsqueda real usa `search_professionals` con PostGIS, filtros y orden por reputación. Las fotos de solicitudes se almacenan en un bucket privado y se muestran con URLs firmadas de una hora. Las fotos de perfil y portafolio son públicas porque forman parte del perfil visible del maestro.
 
 ## Desplegar en Vercel
 
-Importa este repositorio en Vercel. [`vercel.json`](vercel.json) fija el comando `npm run build`, el directorio `dist/hogar-cerca/browser` y la redirección de rutas de Angular. Puedes desplegarlo **sin Supabase** para presentar el mockup; aparecerá la banda «Modo demostración». Para el piloto, añade las dos variables públicas anteriores y vuelve a desplegar.
+Importa este repositorio en Vercel. [`vercel.json`](vercel.json) fija el comando `npm run build`, el directorio `dist/hogar-cerca/browser` y la redirección de rutas de Angular. Puedes desplegarlo **sin Supabase** para presentar el mockup; aparecerá la banda «Modo demostración». Para el piloto, añade las dos variables públicas anteriores y vuelve a desplegar. El nombre anterior `SUPABASE_ANON_KEY` también se acepta por compatibilidad.
 
 Node.js 22.12 o posterior es compatible con la versión Angular usada aquí. Se recomienda fijar Node 22 en la configuración del proyecto Vercel.
 

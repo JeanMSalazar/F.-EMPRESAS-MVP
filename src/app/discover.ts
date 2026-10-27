@@ -5,6 +5,7 @@ import {
   inject,
   AfterViewChecked,
   OnDestroy,
+  signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -48,13 +49,18 @@ import { Professional, SPECIALTIES, ZONES } from './models';
         </div>
         <div class="results-heading">
           <div>
-            <h2>{{ filtered().length }} maestros para ti</h2>
+            <h2>
+              {{ filtered().length }} {{ filtered().length === 1 ? 'maestro' : 'maestros' }} para ti
+            </h2>
             <p>Ordenados por calificaciones y trabajos realizados</p>
           </div>
           <span>★ Opiniones de servicios completados</span>
         </div>
-        @if (search_error) {
-          <p class="form-error" role="alert">{{ search_error }}</p>
+        @if (search_error()) {
+          <p class="form-error" role="alert">{{ search_error() }}</p>
+        }
+        @if (loading()) {
+          <p role="status">Buscando maestros...</p>
         }
         <div class="explore-grid">
           @for (pro of filtered(); track pro.id) {
@@ -86,14 +92,16 @@ import { Professional, SPECIALTIES, ZONES } from './models';
               </div></a
             >
           } @empty {
-            <div class="empty-state">
-              <span>⌕</span>
-              <h3>No encontramos maestros con esos filtros</h3>
-              <p>Prueba otra especialidad o zona para ver más opciones.</p>
-              <button class="button button-dark" type="button" (click)="reset()">
-                Limpiar filtros
-              </button>
-            </div>
+            @if (!loading()) {
+              <div class="empty-state">
+                <span>⌕</span>
+                <h3>No encontramos maestros con esos filtros</h3>
+                <p>Prueba otra especialidad o zona para ver más opciones.</p>
+                <button class="button button-dark" type="button" (click)="reset()">
+                  Limpiar filtros
+                </button>
+              </div>
+            }
           }
         </div>
       </div>
@@ -108,8 +116,9 @@ export class ExplorePage {
   specialty = this.route.snapshot.queryParamMap.get('especialidad') ?? '';
   zone = '';
   available_only = false;
-  results: Professional[] = [];
-  search_error = '';
+  results = signal<Professional[]>([]);
+  search_error = signal('');
+  loading = signal(false);
   constructor() {
     void this.refresh();
   }
@@ -124,18 +133,19 @@ export class ExplorePage {
               (!this.available_only || item.available),
           )
           .sort((a, b) => b.rating - a.rating || b.completed_count - a.completed_count)
-      : this.results;
+      : this.results();
   }
   async refresh(): Promise<void> {
-    this.search_error = '';
+    this.search_error.set('');
+    this.loading.set(true);
     try {
-      this.results = await this.market.search_professionals(
-        this.specialty,
-        this.zone,
-        this.available_only,
+      this.results.set(
+        await this.market.search_professionals(this.specialty, this.zone, this.available_only),
       );
     } catch (error) {
-      this.search_error = error instanceof Error ? error.message : String(error);
+      this.search_error.set(error instanceof Error ? error.message : String(error));
+    } finally {
+      this.loading.set(false);
     }
   }
   reset(): void {
@@ -394,6 +404,9 @@ export class ProfessionalPage {
             @if (error) {
               <p class="form-error" role="alert">{{ error }}</p>
             }
+            @if (message) {
+              <p class="form-success" role="status">{{ message }}</p>
+            }
             <button class="button button-primary button-full" type="submit" [disabled]="working">
               {{ working ? 'Un momento...' : is_register ? 'Crear mi cuenta ↗' : 'Ingresar ↗' }}
             </button>
@@ -439,13 +452,15 @@ export class AuthPage {
   email = '';
   password = '';
   error = '';
+  message = '';
   working = false;
   async submit(): Promise<void> {
     this.error = '';
+    this.message = '';
     this.working = true;
     try {
-      if (this.is_register)
-        await this.market.register(
+      if (this.is_register) {
+        const result = await this.market.register(
           this.role,
           this.full_name,
           this.email,
@@ -454,7 +469,12 @@ export class AuthPage {
           this.zone,
           this.specialty,
         );
-      else await this.market.login(this.email, this.password, this.role);
+        if (result === 'confirmation_required') {
+          this.password = '';
+          this.message = 'Cuenta creada. Revisa tu correo y confirma tu dirección antes de ingresar.';
+          return;
+        }
+      } else await this.market.login(this.email, this.password, this.role);
       await this.router.navigateByUrl('/panel');
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
@@ -521,6 +541,7 @@ export class AuthPage {
                     name="title"
                     [(ngModel)]="title"
                     required
+                    minlength="3"
                     maxlength="90"
                     placeholder="Ej. Reparar fuga en la cocina"
                 /></label>
@@ -531,6 +552,7 @@ export class AuthPage {
                   [(ngModel)]="description"
                   required
                   rows="4"
+                  minlength="10"
                   maxlength="1200"
                   placeholder="¿Qué sucede? ¿Hay algún detalle que el maestro deba saber?"
                 ></textarea>
@@ -705,6 +727,14 @@ export class RequestFormPage implements AfterViewChecked, OnDestroy {
   }
   async submit(): Promise<void> {
     this.error = '';
+    if (this.title.trim().length < 3) {
+      this.error = 'El título debe tener al menos 3 caracteres.';
+      return;
+    }
+    if (this.description.trim().length < 10) {
+      this.error = 'La descripción debe tener al menos 10 caracteres.';
+      return;
+    }
     this.working = true;
     try {
       const request_id = await this.market.create_request(

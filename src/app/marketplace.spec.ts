@@ -1,11 +1,13 @@
 import { TestBed } from '@angular/core/testing';
-import { Marketplace } from './marketplace';
+import { Marketplace, PUBLIC_CONFIG } from './marketplace';
 
 // Exercises the same commands used by the two role views, without a Supabase project.
 describe('marketplace demo transaction', () => {
   beforeEach(() => {
     localStorage.clear();
-    TestBed.configureTestingModule({});
+    TestBed.configureTestingModule({
+      providers: [{ provide: PUBLIC_CONFIG, useValue: { url: '', anon_key: '' } }],
+    });
   });
   afterEach(() => TestBed.resetTestingModule());
 

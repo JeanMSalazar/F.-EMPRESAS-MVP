@@ -1,4 +1,7 @@
 -- ManoCerca MVP. Apply in Supabase SQL Editor or with the Supabase CLI.
+-- Safe to retry after a failed SQL Editor run on a new project.
+begin;
+
 create schema if not exists extensions;
 create extension if not exists postgis with schema extensions;
 grant usage on schema extensions to anon, authenticated;
@@ -104,7 +107,17 @@ create table if not exists public.notifications (
   created_at timestamptz not null default now()
 );
 create index if not exists notifications_user_idx on public.notifications(user_id,created_at desc);
-alter publication supabase_realtime add table public.notifications;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'notifications'
+  ) then
+    execute 'alter publication supabase_realtime add table public.notifications';
+  end if;
+end $$;
 create table if not exists public.incidents (
   id uuid primary key default gen_random_uuid(),
   service_id uuid not null references public.services(id),
@@ -142,47 +155,65 @@ alter table public.reviews enable row level security;
 alter table public.notifications enable row level security;
 alter table public.incidents enable row level security;
 
+drop policy if exists "profile_self_read" on public.profiles;
 create policy "profile_self_read" on public.profiles for select to authenticated using (id = (select auth.uid()));
+drop policy if exists "profile_self_update" on public.profiles;
 create policy "profile_self_update" on public.profiles for update to authenticated using (id = (select auth.uid())) with check (id = (select auth.uid()));
+drop policy if exists "professionals_public_read" on public.professionals;
 create policy "professionals_public_read" on public.professionals for select to anon, authenticated using (true);
+drop policy if exists "professionals_self_update" on public.professionals;
 create policy "professionals_self_update" on public.professionals for update to authenticated using (id = (select auth.uid())) with check (id = (select auth.uid()));
+drop policy if exists "portfolio_public_read" on public.portfolio_photos;
 create policy "portfolio_public_read" on public.portfolio_photos for select to anon, authenticated using (true);
+drop policy if exists "portfolio_self_insert" on public.portfolio_photos;
 create policy "portfolio_self_insert" on public.portfolio_photos for insert to authenticated with check (professional_id = (select auth.uid()) and split_part(storage_path,'/',1) = (select auth.uid())::text);
+drop policy if exists "request_read_participants" on public.service_requests;
 create policy "request_read_participants" on public.service_requests for select to authenticated using (
   client_id = (select auth.uid()) or exists (
     select 1 from public.professionals p where p.id = (select auth.uid())
     and (professional_id = p.id or (professional_id is null and service_requests.specialty = p.specialty))
   )
 );
+drop policy if exists "request_insert_client" on public.service_requests;
 create policy "request_insert_client" on public.service_requests for insert to authenticated with check (
   client_id = (select auth.uid()) and status = 'REQUESTED'
   and exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'client')
 );
+drop policy if exists "photo_read_for_request" on public.request_photos;
 create policy "photo_read_for_request" on public.request_photos for select to authenticated using (
   exists (select 1 from public.service_requests r where r.id = request_id)
 );
+drop policy if exists "photo_insert_by_client" on public.request_photos;
 create policy "photo_insert_by_client" on public.request_photos for insert to authenticated with check (
   split_part(storage_path,'/',1) = (select auth.uid())::text
   and exists (select 1 from public.service_requests r where r.id = request_id and r.client_id = (select auth.uid()))
 );
+drop policy if exists "quote_read_participants" on public.quotes;
 create policy "quote_read_participants" on public.quotes for select to authenticated using (
   professional_id = (select auth.uid()) or exists (
     select 1 from public.service_requests r where r.id = request_id and r.client_id = (select auth.uid())
   )
 );
+drop policy if exists "service_read_participants" on public.services;
 create policy "service_read_participants" on public.services for select to authenticated using (client_id = (select auth.uid()) or professional_id = (select auth.uid()));
+drop policy if exists "review_public_read" on public.reviews;
 create policy "review_public_read" on public.reviews for select to anon, authenticated using (true);
+drop policy if exists "review_after_completion" on public.reviews;
 create policy "review_after_completion" on public.reviews for insert to authenticated with check (
   reviewer_id = (select auth.uid()) and reviewer_id <> reviewee_id
   and exists (select 1 from public.services s where s.id = service_id and s.status = 'COMPLETED'
     and ((s.client_id = reviewer_id and s.professional_id = reviewee_id)
       or (s.professional_id = reviewer_id and s.client_id = reviewee_id)))
 );
+drop policy if exists "notification_self_read" on public.notifications;
 create policy "notification_self_read" on public.notifications for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists "notification_self_update" on public.notifications;
 create policy "notification_self_update" on public.notifications for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists "incident_read_participants" on public.incidents;
 create policy "incident_read_participants" on public.incidents for select to authenticated using (
   exists (select 1 from public.services s where s.id = service_id and (s.client_id = (select auth.uid()) or s.professional_id = (select auth.uid())))
 );
+drop policy if exists "incident_insert_participant" on public.incidents;
 create policy "incident_insert_participant" on public.incidents for insert to authenticated with check (
   reporter_id = (select auth.uid()) and exists (select 1 from public.services s where s.id = service_id and (s.client_id = (select auth.uid()) or s.professional_id = (select auth.uid())))
 );
@@ -198,6 +229,7 @@ grant update(read) on public.notifications to authenticated;
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 values('request-photos','request-photos',false,5242880,array['image/jpeg','image/png','image/webp','image/gif'])
 on conflict(id) do nothing;
+drop policy if exists "request_photos_participant_read" on storage.objects;
 create policy "request_photos_participant_read" on storage.objects for select to authenticated using (
   bucket_id = 'request-photos' and exists (
     select 1 from public.request_photos ph
@@ -207,13 +239,16 @@ create policy "request_photos_participant_read" on storage.objects for select to
         and (r.professional_id=p.id or (r.professional_id is null and r.specialty=p.specialty))))
   )
 );
+drop policy if exists "request_photos_owner_upload" on storage.objects;
 create policy "request_photos_owner_upload" on storage.objects for insert to authenticated with check (
   bucket_id = 'request-photos' and (storage.foldername(name))[1] = (select auth.uid())::text
 );
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 values('professional-media','professional-media',true,5242880,array['image/jpeg','image/png','image/webp','image/gif'])
 on conflict(id) do nothing;
+drop policy if exists "professional_media_public_read" on storage.objects;
 create policy "professional_media_public_read" on storage.objects for select to anon, authenticated using (bucket_id = 'professional-media');
+drop policy if exists "professional_media_owner_upload" on storage.objects;
 create policy "professional_media_owner_upload" on storage.objects for insert to authenticated with check (
   bucket_id = 'professional-media' and (storage.foldername(name))[1] = (select auth.uid())::text
 );
@@ -231,7 +266,7 @@ language sql stable security invoker set search_path = public, extensions as $$
     round((extensions.ST_Distance(
       extensions.ST_SetSRID(extensions.ST_MakePoint(p.longitude,p.latitude),4326)::extensions.geography,
       extensions.ST_SetSRID(extensions.ST_MakePoint(p_lng,p_lat),4326)::extensions.geography
-    )/1000)::numeric,1)
+    )/1000)::numeric,1) as distance_km
   from public.professionals p
   where (p_specialty is null or p.specialty = p_specialty)
     and (p_zone is null or p.zone = p_zone)
@@ -346,6 +381,7 @@ begin
   return new;
 end $$;
 revoke all on function public.refresh_professional_rating() from public;
+drop trigger if exists on_review_insert on public.reviews;
 create trigger on_review_insert after insert on public.reviews for each row execute function public.refresh_professional_rating();
 
 create or replace function public.notify_incident_update() returns trigger language plpgsql security definer set search_path = public as $$
@@ -357,8 +393,10 @@ begin
   return new;
 end $$;
 revoke all on function public.notify_incident_update() from public;
+drop trigger if exists on_incident_update on public.incidents;
 create trigger on_incident_update after update of status on public.incidents
 for each row execute function public.notify_incident_update();
 
 -- Client-facing security: only authenticated clients can publish; quote and service transitions
 -- are controlled by the functions above. Never place a service_role key in the Angular app.
+commit;

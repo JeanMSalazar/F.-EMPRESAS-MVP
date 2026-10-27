@@ -1687,6 +1687,15 @@ details textarea:focus {
   font-size: 12px;
   line-height: 1.5;
 }
+.form-success {
+  color: var(--green);
+  background: #f0f8f1;
+  border: 1px solid #bfdcc5;
+  border-radius: 7px;
+  padding: 11px 13px;
+  font-size: 12px;
+  line-height: 1.5;
+}
 .request-hero {
   padding: 60px 0 55px;
 }
